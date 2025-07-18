@@ -17,6 +17,7 @@ import tensorflow as tf
 from helper_code import *
 from keras.regularizers import l2
 import keras
+import pywt
 
 ################################################################################
 #
@@ -60,13 +61,11 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Training the model on the data...')
 
-    print(labels)
-
     batch_size = 16                                                                 # make this a number divisible by the total number of samples
     epochs = 10
     units = 12 * batch_size                                                         # number of LSTM cells, hidden states
     input_dim = 1                                                                   # number of features
-    num_labels = 6  
+    num_labels = 2  
     time_step = features.shape[1]
     sample_size = features.shape[0]
     #sample_size = train_set_datachunk.shape[0]                                      # number of total ECG samples
@@ -113,15 +112,20 @@ def load_model(model_folder, verbose):
 # arguments of this function.
 def run_model(record, model, verbose):
     # Load the model.
-    model = model['model']
+    #model = model[model]
 
     # Extract the features.
     features = extract_features(record)
     features = features.reshape(1, -1)
 
     # Get the model outputs.
-    binary_output = model.predict(features)[0]
-    probability_output = model.predict_proba(features)[0][1]
+    #binary_output = model.predict_step(features)
+    #print(binary_output)
+    probability_output = model.predict(features)
+    binary_output = (probability_output < 0.5).astype(int)
+    #print(binary_output)
+
+    
 
     return binary_output, probability_output
 
@@ -161,14 +165,29 @@ def extract_features(record):
 
     features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
 
-    return np.asarray(features, dtype=np.float32)
+    #return np.asarray(features, dtype=np.float32)
+    return features
 
 # Save your trained model.
 def save_model(model_folder, model):
     filename = os.path.join(model_folder, 'model.keras')
     model.save(filename)
 
+def denoise(data):
+    wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
+
+    w = pywt.Wavelet(wavelet_funtion)
+    maxlev = pywt.dwt_max_level(len(data), w.dec_len)
+    threshold = 0.03                                                               # Threshold for filtering the higher the closer to the wavelet (less noise)
+
+    coeffs = pywt.wavedec(data, wavelet_funtion, level=maxlev)
+    for i in range(1, len(coeffs)):
+        coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
+
+    datarec = pywt.waverec(coeffs, wavelet_funtion)
+    return datarec
+
 if __name__ == '__main__':
     train_model('C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\training_data',
                 'C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\model',
-                True)
+                False)
