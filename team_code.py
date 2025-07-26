@@ -16,6 +16,7 @@ import sys
 import tensorflow as tf
 from helper_code import *
 from keras.regularizers import l2
+from scipy import stats
 import keras
 import pywt
 
@@ -68,9 +69,7 @@ def train_model(data_folder, model_folder, verbose):
     num_labels = 2  
     time_step = features.shape[1]
     sample_size = features.shape[0]
-    #sample_size = train_set_datachunk.shape[0]                                      # number of total ECG samples
-    #time_step = train_set_datachunk.shape[1]                                        # length of the ECG chunk
-    # input_shape = (batch_size, time_step, input_dim)
+    input_shape = (time_step, input_dim) 
 
     #clear all data from previous runs 
     tf.keras.backend.clear_session()
@@ -78,12 +77,13 @@ def train_model(data_folder, model_folder, verbose):
     #define the model
     model = tf.keras.Sequential([
         #add the layers of the model
-         tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
-         tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
-         tf.keras.layers.LSTM(units, dropout = 0.2, recurrent_regularizer= l2(0.01)),                            # returns 1xbatch_size
-         tf.keras.layers.Dense(num_labels, activation = "softmax")                                                                                                              # softmax for multiclass labeling
+         tf.keras.layers.LSTM(units, input_shape=input_shape, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
+         tf.keras.layers.LSTM(units, input_shape=input_shape, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
+         tf.keras.layers.LSTM(units, dropout = 0.2, recurrent_regularizer= l2(0.01)),                                                     # returns 1xbatch_size
+         tf.keras.layers.Dense(num_labels, activation = "softmax")                  # does this need to be units=1 for single output prediction                                                                                            # softmax for multiclass labeling
 
      ])
+    
     inputs = np.random.random((sample_size, time_step, 1))
     output = model(inputs)
 
@@ -137,33 +137,36 @@ def run_model(record, model, verbose):
 
 # Extract your features.
 def extract_features(record):
-    header = load_header(record)
-    age = get_age(header)
-    sex = get_sex(header)
+    # header = load_header(record)
+    # age = get_age(header)
+    # sex = get_sex(header)
     
-    one_hot_encoding_sex = np.zeros(3, dtype=bool)
-    if sex == 'Female':
-        one_hot_encoding_sex[0] = 1
-    elif sex == 'Male':
-        one_hot_encoding_sex[1] = 1
-    else:
-        one_hot_encoding_sex[2] = 1
+    # one_hot_encoding_sex = np.zeros(3, dtype=bool)
+    # if sex == 'Female':
+    #     one_hot_encoding_sex[0] = 1
+    # elif sex == 'Male':
+    #     one_hot_encoding_sex[1] = 1
+    # else:
+    #     one_hot_encoding_sex[2] = 1
 
-    signal, fields = load_signals(record)
+    signal, fields = load_signals(record) 
+    signal = denoise(signal)                
+    signal = stats.zscore(signal)
 
     # TO-DO: Update to compute per-lead features. Check lead order and update and use functions for reordering leads as needed.
 
-    num_finite_samples = np.size(np.isfinite(signal))
-    if num_finite_samples > 0:
-        signal_mean = np.nanmean(signal)
-    else:
-        signal_mean = 0.0
-    if num_finite_samples > 1:
-        signal_std = np.nanstd(signal)
-    else:
-        signal_std = 0.0
+    # num_finite_samples = np.size(np.isfinite(signal))
+    # if num_finite_samples > 0:
+    #     signal_mean = np.nanmean(signal)
+    # else:
+    #     signal_mean = 0.0
+    # if num_finite_samples > 1:
+    #     signal_std = np.nanstd(signal)
+    # else:
+    #     signal_std = 0.0
 
-    features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
+    # features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
+    features = np.asarray(signal, dtype=np.float32)
 
     #return np.asarray(features, dtype=np.float32)
     return features
@@ -173,6 +176,13 @@ def save_model(model_folder, model):
     filename = os.path.join(model_folder, 'model.keras')
     model.save(filename)
 
+'''
+Denoise the signal data using the wavelet sym4 label, threshold of 0.4,
+and found coefficients.
+
+input: list of signal data
+return: list of signal data
+'''
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
 
