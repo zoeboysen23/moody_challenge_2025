@@ -7,4 +7,4 @@ h5py==3.12.1
 tensorflow==2.19
 keras==3.9.0
 PyWavelets==1.8.0
-scipy==1.16.1
+scipy==1.7.3
