@@ -18,6 +18,7 @@ from helper_code import *
 from keras.regularizers import l2
 import keras
 import pywt
+import scipy
 
 ################################################################################
 #
@@ -44,33 +45,59 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Extracting features and labels from the data...')
 
-    features = np.zeros((num_records, 6), dtype=np.float64)
+    ##Test with small sample
+    #num_records = 4
+    #features = np.zeros((num_records, 4097,12), dtype=np.float64)
     labels = np.zeros(num_records, dtype=bool)
 
+    features = []
     # Iterate over the records.
+    
     for i in range(num_records):
         if verbose:
             width = len(str(num_records))
             print(f'- {i+1:>{width}}/{num_records}: {records[i]}...')
 
         record = os.path.join(data_folder, records[i])
-        features[i] = extract_features(record)
+        #features[i] = extract_features(record)
+        features.append(extract_features(record))
         labels[i] = load_label(record)
 
+    sequence = []
+    for i in range(num_records):
+        #print(features[i].shape)
+        sequence.append(features[i].shape[0])
+
+    #print(sequence)
+    padded_features = np.zeros((num_records,max(sequence),12),dtype=np.float64)
+    for i in range(num_records):
+        #print(len(features[i]))
+        #padded_features[i] = tf.keras.preprocessing.sequence.pad_sequences(features[i],maxlen=max(sequence))
+        #print(features[i].shape[1])
+        for signal_index in range(features[i].shape[1]):
+           #print(features[i][:,signal_index].shape)
+            i_signal = features[i][:,signal_index]
+            i_signal=i_signal.reshape(1,i_signal.shape[0])
+            padded_features[i][:,signal_index] = tf.keras.preprocessing.sequence.pad_sequences(i_signal,maxlen=max(sequence))
+            print(padded_features[i][:,signal_index].shape)
+    
+    print(padded_features.shape)
+    
     # Train the models.
     if verbose:
         print('Training the model on the data...')
 
-    batch_size = 16                                                                 # make this a number divisible by the total number of samples
+    batch_size = 1                                                                 # make this a number divisible by the total number of samples
     epochs = 10
     units = 12 * batch_size                                                         # number of LSTM cells, hidden states
     input_dim = 1                                                                   # number of features
     num_labels = 2  
-    time_step = features.shape[1]
-    sample_size = features.shape[0]
+    length = padded_features.shape[1] #Also known as time_step, this is the length of the signal
+    sample_size = padded_features.shape[0]
+    concurrent_sig=padded_features.shape[2]
     #sample_size = train_set_datachunk.shape[0]                                      # number of total ECG samples
     #time_step = train_set_datachunk.shape[1]                                        # length of the ECG chunk
-    # input_shape = (batch_size, time_step, input_dim)
+    input_shape = (length, concurrent_sig)
 
     #clear all data from previous runs 
     tf.keras.backend.clear_session()
@@ -78,14 +105,15 @@ def train_model(data_folder, model_folder, verbose):
     #define the model
     model = tf.keras.Sequential([
         #add the layers of the model
+         tf.keras.layers.Input(shape=input_shape),
          tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
          tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
          tf.keras.layers.LSTM(units, dropout = 0.2, recurrent_regularizer= l2(0.01)),                            # returns 1xbatch_size
          tf.keras.layers.Dense(num_labels, activation = "softmax")                                                                                                              # softmax for multiclass labeling
 
      ])
-    inputs = np.random.random((sample_size, time_step, 1))
-    output = model(inputs)
+    #inputs = np.random.random((batch_size, time_step, sample_size))
+    #output = model(inputs)
 
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
@@ -93,7 +121,8 @@ def train_model(data_folder, model_folder, verbose):
 
     os.makedirs(model_folder, exist_ok=True)
 
-    model.fit(features, labels, epochs = epochs, batch_size = batch_size)
+    print("Training")
+    model.fit(padded_features, labels, epochs = epochs, batch_size = batch_size)
     # Save the model.
     save_model(model_folder, model)
 
@@ -163,8 +192,12 @@ def extract_features(record):
     else:
         signal_std = 0.0
 
-    features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
+    #features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
+    
+    #features = np.array(signal[:,1])
+    signal = denoise(signal)
 
+    features = np.concatenate((np.full((1,12), age), denoise(signal)))
     #return np.asarray(features, dtype=np.float32)
     return features
 
@@ -175,16 +208,19 @@ def save_model(model_folder, model):
 
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
-
-    w = pywt.Wavelet(wavelet_funtion)
-    maxlev = pywt.dwt_max_level(len(data), w.dec_len)
-    threshold = 0.03                                                               # Threshold for filtering the higher the closer to the wavelet (less noise)
-
-    coeffs = pywt.wavedec(data, wavelet_funtion, level=maxlev)
-    for i in range(1, len(coeffs)):
-        coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
-
-    datarec = pywt.waverec(coeffs, wavelet_funtion)
+    data = np.array(data)
+    shape=data.shape
+    datarec = np.zeros((shape[0],shape[1]))
+    for x in range(shape[1]):
+        w = pywt.Wavelet(wavelet_funtion)
+        maxlev = pywt.dwt_max_level(len(data), w.dec_len)
+        threshold = 0.03                                                               # Threshold for filtering the higher the closer to the wavelet (less noise)
+        coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
+        for i in range(1, len(coeffs)):
+            coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
+        sig = pywt.waverec(coeffs, wavelet_funtion)
+        sig = scipy.stats.zscore(sig)
+        datarec[:,x] = scipy.stats.zscore(sig)
     return datarec
 
 if __name__ == '__main__':
