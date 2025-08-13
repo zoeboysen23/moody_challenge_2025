@@ -46,7 +46,7 @@ def train_model(data_folder, model_folder, verbose):
         print('Extracting features and labels from the data...')
 
     ##Test with small sample
-    #num_records = 4
+    num_records = 10
     #features = np.zeros((num_records, 4097,12), dtype=np.float64)
     labels = np.zeros(num_records, dtype=bool)
 
@@ -210,17 +210,22 @@ def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
     data = np.array(data)
     shape=data.shape
-    datarec = np.zeros((shape[0],shape[1]))
-    for x in range(shape[1]):
+    datarec = np.zeros((shape[0],shape[1])) 
+    for x in range(shape[1]): 
         w = pywt.Wavelet(wavelet_funtion)
         maxlev = pywt.dwt_max_level(len(data), w.dec_len)
         threshold = 0.03                                                               # Threshold for filtering the higher the closer to the wavelet (less noise)
         coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
-        for i in range(1, len(coeffs)):
+        for i in range(0, len(coeffs)):
             coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
         sig = pywt.waverec(coeffs, wavelet_funtion)
-        sig = scipy.stats.zscore(sig)
+        
+        if (shape[0]%2!=0):                     
+            print('This number is odd')                                    #Checks if the number is odd or even
+            sig = np.delete(sig, -1)                                       #If odd delete last element
+                                                  
         datarec[:,x] = scipy.stats.zscore(sig)
+
     return datarec
 
 if __name__ == '__main__':
