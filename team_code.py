@@ -46,7 +46,7 @@ def train_model(data_folder, model_folder, verbose):
         print('Extracting features and labels from the data...')
 
     ##Test with small sample
-    num_records = 10
+    #num_records = 10
     #features = np.zeros((num_records, 4097,12), dtype=np.float64)
     labels = np.zeros(num_records, dtype=bool)
 
@@ -219,7 +219,7 @@ def denoise(data):
         for i in range(0, len(coeffs)):
             coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
         sig = pywt.waverec(coeffs, wavelet_funtion)
-        
+
         if (shape[0]%2!=0):                     
             print('This number is odd')                                    #Checks if the number is odd or even
             sig = np.delete(sig, -1)                                       #If odd delete last element
