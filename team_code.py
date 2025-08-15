@@ -145,8 +145,9 @@ def run_model(record, model, verbose):
 
     # Extract the features.
     features = extract_features(record)
-    features = features.reshape(1, -1)
-
+    
+    features = features.reshape(-1, len(features), 12)
+    print(len(features))
     # Get the model outputs.
     #binary_output = model.predict_step(features)
     #print(binary_output)
