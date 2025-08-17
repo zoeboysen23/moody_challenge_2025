@@ -147,7 +147,7 @@ def run_model(record, model, verbose):
     features = extract_features(record)
     
     features = features.reshape(-1, len(features), 12)
-    print(len(features))
+    print(features.shape)
     # Get the model outputs.
     #binary_output = model.predict_step(features)
     #print(binary_output)
@@ -210,20 +210,23 @@ def save_model(model_folder, model):
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
     data = np.array(data)
+    data = data[0::2][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
     shape=data.shape
+    #data_cal = len(data[0][0::2])
+
     datarec = np.zeros((shape[0],shape[1])) 
     for x in range(shape[1]): 
         w = pywt.Wavelet(wavelet_funtion)
         maxlev = pywt.dwt_max_level(len(data), w.dec_len)
-        threshold = 0.03                                                               # Threshold for filtering the higher the closer to the wavelet (less noise)
+        threshold = 0.03                                                          # Threshold for filtering the higher the closer to the wavelet (less noise)
         coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
         for i in range(0, len(coeffs)):
             coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
         sig = pywt.waverec(coeffs, wavelet_funtion)
 
-        if (shape[0]%2!=0):                     
-            print('This number is odd')                                    #Checks if the number is odd or even
-            sig = np.delete(sig, -1)                                       #If odd delete last element
+        if ((shape[0])%2 != 0):                     
+            print('This number is odd')                                           #Checks if the number is odd or even
+            sig = np.delete(sig, -1)                                              #If odd delete last element
                                                   
         datarec[:,x] = scipy.stats.zscore(sig)
 
