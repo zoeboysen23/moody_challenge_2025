@@ -214,23 +214,33 @@ def denoise(data):
     shape=data.shape
     #data_cal = len(data[0][0::2])
 
-    # datarec = np.zeros((shape[0],shape[1])) 
-    # for x in range(shape[1]): 
-    #     w = pywt.Wavelet(wavelet_funtion)
-    #     maxlev = pywt.dwt_max_level(len(data), w.dec_len)
-    #     threshold = 0.03                                                          # Threshold for filtering the higher the closer to the wavelet (less noise)
-    #     coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
-    #     for i in range(0, len(coeffs)):
-    #         coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
-    #     sig = pywt.waverec(coeffs, wavelet_funtion)
+    datarec = np.zeros((shape[0],shape[1])) 
+    for x in range(shape[1]): 
+        w = pywt.Wavelet(wavelet_funtion)
+        maxlev = pywt.dwt_max_level(len(data), w.dec_len)
+        threshold = 0.03                                                          # Threshold for filtering the higher the closer to the wavelet (less noise)
+        coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
+        for i in range(0, len(coeffs)):
+            coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
+        sig = pywt.waverec(coeffs, wavelet_funtion)
 
-    #     if ((shape[0])%2 != 0):                     
-    #         print('This number is odd')                                           #Checks if the number is odd or even
-    #         sig = np.delete(sig, -1)                                              #If odd delete last element
-                                                  
-    #     datarec[:,x] = scipy.stats.zscore(sig)
+        if ((shape[0])%2 != 0):                     
+            print('This number is odd')                                           #Checks if the number is odd or even
+            sig = np.delete(sig, -1)                                              #If odd delete last element
 
-    return data
+
+        if shape[0] - len(sig) != 0:       
+            print('The shapes are uneven')                                       #Checks to see if the signal and the zeros array are the same size
+            if shape[0] - len(sig) > 0:
+                sig = np.append(sig, 0)
+            if shape[0] - len(sig) < 0:
+                sig = np.delete(sig, -1)                                              #If odd delete last element
+                
+
+        datarec[:,x] = scipy.stats.zscore(sig)
+
+    return datarec
+    
 
 if __name__ == '__main__':
     train_model('C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\training_data',
