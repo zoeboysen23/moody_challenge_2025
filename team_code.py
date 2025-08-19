@@ -230,7 +230,7 @@ def denoise(data):
                                                   
         datarec[:,x] = scipy.stats.zscore(sig)
 
-    return datarec
+    return data
 
 if __name__ == '__main__':
     train_model('C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\training_data',
