@@ -87,16 +87,16 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Training the model on the data...')
 
-    batch_size = 1                                                                 # make this a number divisible by the total number of samples
+    batch_size = 1                                                                  # make this a number divisible by the total number of samples
     epochs = 10
     units = 12 * batch_size                                                         # number of LSTM cells, hidden states
     input_dim = 1                                                                   # number of features
     num_labels = 2  
-    length = padded_features.shape[1] #Also known as time_step, this is the length of the signal
+    length = padded_features.shape[1]                                               # Also known as time_step, this is the length of the signal
     sample_size = padded_features.shape[0]
-    concurrent_sig=padded_features.shape[2]
-    #sample_size = train_set_datachunk.shape[0]                                      # number of total ECG samples
-    #time_step = train_set_datachunk.shape[1]                                        # length of the ECG chunk
+    concurrent_sig = padded_features.shape[2]
+    #sample_size = train_set_datachunk.shape[0]                                     # number of total ECG samples
+    #time_step = train_set_datachunk.shape[1]                                       # length of the ECG chunk (time steps)
     input_shape = (length, concurrent_sig)
 
     #clear all data from previous runs 
