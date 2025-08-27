@@ -19,6 +19,7 @@ from keras.regularizers import l2
 import keras
 import pywt
 import scipy
+import matplotlib.pyplot as plt
 
 ################################################################################
 #
@@ -46,7 +47,7 @@ def train_model(data_folder, model_folder, verbose):
         print('Extracting features and labels from the data...')
 
     ##Test with small sample
-    #num_records = 10
+    #num_records = 100
     #features = np.zeros((num_records, 4097,12), dtype=np.float64)
     labels = np.zeros(num_records, dtype=bool)
 
@@ -87,16 +88,30 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Training the model on the data...')
 
+<<<<<<< HEAD
     batch_size = 1                                                                  # make this a number divisible by the total number of samples
     epochs = 10
+=======
+    batch_size = 16                                                                 # make this a number divisible by the total number of samples
+    epochs = 100
+>>>>>>> f6347b50c5eac6ea26a2f6b8d305cdeab9cc965a
     units = 12 * batch_size                                                         # number of LSTM cells, hidden states
     input_dim = 1                                                                   # number of features
     num_labels = 2  
     length = padded_features.shape[1]                                               # Also known as time_step, this is the length of the signal
     sample_size = padded_features.shape[0]
+<<<<<<< HEAD
     concurrent_sig = padded_features.shape[2]
     #sample_size = train_set_datachunk.shape[0]                                     # number of total ECG samples
     #time_step = train_set_datachunk.shape[1]                                       # length of the ECG chunk (time steps)
+=======
+    concurrent_sig=padded_features.shape[2]
+    #sample_size = train_set_datachunk.shape[0]                                      # number of total ECG samples
+    #time_step = train_set_datachunk.shape[1]                                        # length of the ECG chunk
+
+
+    print(sample_size, length, concurrent_sig)
+>>>>>>> f6347b50c5eac6ea26a2f6b8d305cdeab9cc965a
     input_shape = (length, concurrent_sig)
 
     #clear all data from previous runs 
@@ -171,13 +186,13 @@ def extract_features(record):
     age = get_age(header)
     sex = get_sex(header)
     
-    one_hot_encoding_sex = np.zeros(3, dtype=bool)
+    #one_hot_encoding_sex = np.zeros(3, dtype=bool)
     if sex == 'Female':
-        one_hot_encoding_sex[0] = 1
+        sex = 0
     elif sex == 'Male':
-        one_hot_encoding_sex[1] = 1
+        sex = 1
     else:
-        one_hot_encoding_sex[2] = 1
+        sex = 2
 
     signal, fields = load_signals(record)
 
@@ -198,7 +213,7 @@ def extract_features(record):
     #features = np.array(signal[:,1])
     signal = denoise(signal)
 
-    features = np.concatenate((np.full((1,12), age), denoise(signal)))
+    features = np.concatenate((np.full((1,12), age), np.full((1,12),sex) ,denoise(signal)))
     #return np.asarray(features, dtype=np.float32)
     return features
 
@@ -210,9 +225,12 @@ def save_model(model_folder, model):
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
     data = np.array(data)
-    data = data[0::2][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
+    data = data[0::4][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
     shape=data.shape
     #data_cal = len(data[0][0::2])
+
+    #plt.subplot(1, 2, 1) 
+    #plt.plot(data[:,1])                                                          #Plot the original signal before modifications
 
     datarec = np.zeros((shape[0],shape[1])) 
     for x in range(shape[1]): 
@@ -225,20 +243,22 @@ def denoise(data):
         sig = pywt.waverec(coeffs, wavelet_funtion)
 
         if ((shape[0])%2 != 0):                     
-            print('This number is odd')                                           #Checks if the number is odd or even
+            #print('This number is odd')                                           #Checks if the number is odd or even
             sig = np.delete(sig, -1)                                              #If odd delete last element
 
 
         if shape[0] - len(sig) != 0:       
-            print('The shapes are uneven')                                       #Checks to see if the signal and the zeros array are the same size
+            #print('The shapes are uneven')                                       #Checks to see if the signal and the zeros array are the same size
             if shape[0] - len(sig) > 0:
-                sig = np.append(sig, 0)
+                sig = np.append(sig, 0) 
             if shape[0] - len(sig) < 0:
                 sig = np.delete(sig, -1)                                              #If odd delete last element
                 
 
         datarec[:,x] = scipy.stats.zscore(sig)
-
+    #plt.subplot(1, 2, 2) 
+    #plt.plot(datarec[:,1])
+    #plt.show()
     return datarec
     
 
