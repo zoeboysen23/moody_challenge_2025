@@ -113,7 +113,7 @@ def train_model(data_folder, model_folder, verbose):
          tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
          tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
          tf.keras.layers.LSTM(units, dropout = 0.2, recurrent_regularizer= l2(0.01)),                            # returns 1xbatch_size
-         tf.keras.layers.Dense(num_labels, activation = "softmax")                                                                                                              # softmax for multiclass labeling
+         tf.keras.layers.Dense(num_labels, activation = "softmax")                                               # softmax for multiclass labeling
 
      ])
     #inputs = np.random.random((batch_size, time_step, sample_size))
@@ -214,7 +214,7 @@ def save_model(model_folder, model):
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
     data = np.array(data)
-    data = data[0::4][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
+    data = data[0::5][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
     shape=data.shape
     #data_cal = len(data[0][0::2])
 
