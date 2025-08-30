@@ -182,21 +182,12 @@ def extract_features(record):
     signal, fields = load_signals(record)
 
     # TO-DO: Update to compute per-lead features. Check lead order and update and use functions for reordering leads as needed.
-
-    num_finite_samples = np.size(np.isfinite(signal))
-    if num_finite_samples > 0:
-        signal_mean = np.nanmean(signal)
-    else:
-        signal_mean = 0.0
-    if num_finite_samples > 1:
-        signal_std = np.nanstd(signal)
-    else:
-        signal_std = 0.0
+    signal = [normalize_signal(lead) for lead in signal]
 
     #features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
     
     #features = np.array(signal[:,1])
-    signal = denoise(signal)
+    # signal = denoise(signal)
 
     features = np.concatenate((np.full((1,12), age), denoise(signal)))
     #return np.asarray(features, dtype=np.float32)
@@ -207,6 +198,27 @@ def save_model(model_folder, model):
     filename = os.path.join(model_folder, 'model.keras')
     model.save(filename)
 
+def normalize_signal(signal):
+    # Count finite samples
+    num_finite_samples = np.sum(np.isfinite(signal))
+
+    if num_finite_samples > 0:
+        signal_mean = np.nanmean(signal)
+    else:
+        signal_mean = 0.0
+
+    if num_finite_samples > 1:
+        signal_std = np.nanstd(signal)
+    else:
+        signal_std = 0.0
+
+    # Normalize: (x - mean) / std
+    if signal_std > 1e-8:   # avoid division by zero
+        signal = (signal - signal_mean) / signal_std
+    else:
+        signal = signal - signal_mean   # just mean-center if no variance
+
+    return signal
 def denoise(data):
     wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
     data = np.array(data)
