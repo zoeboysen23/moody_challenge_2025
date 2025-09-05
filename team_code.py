@@ -87,16 +87,14 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Training the model on the data...')
 
-    batch_size = 1                                                                  # make this a number divisible by the total number of samples
+    batch_size = 16                                                                 # make this a number divisible by the total number of samples
     epochs = 10
-    units = 12 * batch_size                                                         # number of LSTM cells, hidden states
+    units = 6 * batch_size                                                          # number of LSTM cells, hidden states
     input_dim = 1                                                                   # number of features
     num_labels = 2  
     length = padded_features.shape[1]                                               # Also known as time_step, this is the length of the signal
     sample_size = padded_features.shape[0]
     concurrent_sig = padded_features.shape[2]
-    #sample_size = train_set_datachunk.shape[0]                                     # number of total ECG samples
-    #time_step = train_set_datachunk.shape[1]                                       # length of the ECG chunk (time steps)
     input_shape = (length, concurrent_sig)
 
     #clear all data from previous runs 
@@ -107,13 +105,9 @@ def train_model(data_folder, model_folder, verbose):
         #add the layers of the model
          tf.keras.layers.Input(shape=input_shape),
          tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
-         tf.keras.layers.LSTM(units, return_sequences=True, dropout = 0.2, recurrent_regularizer= l2(0.01)),     # returns a sequence of vectors of dimension batch_size
          tf.keras.layers.LSTM(units, dropout = 0.2, recurrent_regularizer= l2(0.01)),                            # returns 1xbatch_size
-         tf.keras.layers.Dense(num_labels, activation = "softmax")                                                                                                              # softmax for multiclass labeling
-
+         tf.keras.layers.Dense(num_labels, activation = "softmax")                                               # softmax for multiclass labeling
      ])
-    #inputs = np.random.random((batch_size, time_step, sample_size))
-    #output = model(inputs)
 
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
@@ -171,26 +165,24 @@ def extract_features(record):
     age = get_age(header)
     sex = get_sex(header)
     
-    one_hot_encoding_sex = np.zeros(3, dtype=bool)
+    # one_hot_encoding_sex = np.zeros(12, 3, dtype=bool)
     if sex == 'Female':
-        one_hot_encoding_sex[0] = 1
+        one_hot_encoding_sex=0
     elif sex == 'Male':
-        one_hot_encoding_sex[1] = 1
+        one_hot_encoding_sex=1
     else:
-        one_hot_encoding_sex[2] = 1
+        one_hot_encoding_sex = 2
 
     signal, fields = load_signals(record)
 
     # TO-DO: Update to compute per-lead features. Check lead order and update and use functions for reordering leads as needed.
-    signal = [normalize_signal(lead) for lead in signal]
+    ecg_denoised = denoise_multilead(signal, wavelet_fun='sym3', threshold=0.03, downsample=4)
+    ecg_norm = normalize_multilead_hybrid(ecg_denoised, clip_sigma=5.0, feature_range=(-1,1))
 
     #features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
-    
-    #features = np.array(signal[:,1])
-    # signal = denoise(signal)
+ 
+    features = np.concatenate((np.full((1,12), age),np.full((1,12), one_hot_encoding_sex), ecg_norm))
 
-    features = np.concatenate((np.full((1,12), age), denoise(signal)))
-    #return np.asarray(features, dtype=np.float32)
     return features
 
 # Save your trained model.
@@ -198,63 +190,90 @@ def save_model(model_folder, model):
     filename = os.path.join(model_folder, 'model.keras')
     model.save(filename)
 
-def normalize_signal(signal):
-    # Count finite samples
-    num_finite_samples = np.sum(np.isfinite(signal))
+def normalize_signal_hybrid(signal, clip_sigma=5.0, feature_range=(-1, 1)):
+    """
+    Z-score per recording -> clip to ±clip_sigma -> min-max to feature_range.
+    Works with NaNs/Infs.
+    """
+    x = np.asarray(signal, dtype=float)
+    finite = np.isfinite(x)
+    if not np.any(finite):
+        return np.zeros_like(x)
 
-    if num_finite_samples > 0:
-        signal_mean = np.nanmean(signal)
+    # --- Z-score (per recording, per lead) ---
+    mean = np.nanmean(x)
+    std  = np.nanstd(x)
+    if std > 1e-8:
+        x = (x - mean) / std
     else:
-        signal_mean = 0.0
+        x = x - mean  # flat signal fallback
 
-    if num_finite_samples > 1:
-        signal_std = np.nanstd(signal)
+    # --- Clip to tame artifacts ---
+    if clip_sigma is not None and clip_sigma > 0:
+        x = np.clip(x, -clip_sigma, clip_sigma)
+        # Map from known bounds [-k, k] to feature_range directly (no leakage)
+        lo_in, hi_in = -clip_sigma, clip_sigma
+        lo_out, hi_out = feature_range
+        x = (x - lo_in) / (hi_in - lo_in)            # -> [0,1]
+        x = x * (hi_out - lo_out) + lo_out           # -> [lo_out, hi_out]
     else:
-        signal_std = 0.0
+        # Min–max on the z-scored data (still robust if distribution is tight)
+        xmin = np.nanmin(x); xmax = np.nanmax(x)
+        if xmax - xmin > 1e-8:
+            lo_out, hi_out = feature_range
+            x = (x - xmin) / (xmax - xmin)
+            x = x * (hi_out - lo_out) + lo_out
+        # else leave as z-scored (already centered/scaled)
 
-    # Normalize: (x - mean) / std
-    if signal_std > 1e-8:   # avoid division by zero
-        signal = (signal - signal_mean) / signal_std
-    else:
-        signal = signal - signal_mean   # just mean-center if no variance
+    return x
 
-    return signal
-def denoise(data):
-    wavelet_funtion = 'sym3'                                                      #found to be the best function for ECG 
-    data = np.array(data)
-    data = data[0::2][:]                                                          #take every other point in the lead signal itself to decrease its length and hopefully fix the memory issue
-    shape=data.shape
-    #data_cal = len(data[0][0::2])
-
-    datarec = np.zeros((shape[0],shape[1])) 
-    for x in range(shape[1]): 
-        w = pywt.Wavelet(wavelet_funtion)
-        maxlev = pywt.dwt_max_level(len(data), w.dec_len)
-        threshold = 0.03                                                          # Threshold for filtering the higher the closer to the wavelet (less noise)
-        coeffs = pywt.wavedec(data[:,x], wavelet_funtion, level=maxlev)
-        for i in range(0, len(coeffs)):
-            coeffs[i] = pywt.threshold(coeffs[i], threshold*max(coeffs[i]))
-        sig = pywt.waverec(coeffs, wavelet_funtion)
-
-        if ((shape[0])%2 != 0):                     
-            print('This number is odd')                                           #Checks if the number is odd or even
-            sig = np.delete(sig, -1)                                              #If odd delete last element
+def normalize_multilead_hybrid(ecg, clip_sigma=5.0, feature_range=(-1, 1)):
+    """
+    ecg shape: (n_leads, n_samples) or (n_samples, ) for single lead.
+    Applies the hybrid normalization per lead independently.
+    """
+    ecg = np.asarray(ecg, dtype=float)
+    if ecg.ndim == 1:
+        return normalize_signal_hybrid(ecg, clip_sigma, feature_range)
+    return np.vstack([
+        normalize_signal_hybrid(ecg[i], clip_sigma, feature_range)
+        for i in range(ecg.shape[0])
+    ])
 
 
-        if shape[0] - len(sig) != 0:       
-            print('The shapes are uneven')                                       #Checks to see if the signal and the zeros array are the same size
-            if shape[0] - len(sig) > 0:
-                sig = np.append(sig, 0)
-            if shape[0] - len(sig) < 0:
-                sig = np.delete(sig, -1)                                              #If odd delete last element
-                
+def denoise_signal(signal, wavelet_fun='sym3', threshold=0.03):
+    """
+    Wavelet denoising for a single ECG lead.
+    """
+    # Decompose with chosen wavelet
+    w = pywt.Wavelet(wavelet_fun)
+    maxlev = pywt.dwt_max_level(len(signal), w.dec_len)
+    coeffs = pywt.wavedec(signal, wavelet_fun, level=maxlev)
 
-        datarec[:,x] = scipy.stats.zscore(sig)
+    # Threshold detail coefficients
+    for i in range(1, len(coeffs)):  # skip approximation (coeffs[0])
+        coeffs[i] = pywt.threshold(coeffs[i], threshold * np.max(coeffs[i]))
 
-    return datarec
+    # Reconstruct signal
+    return pywt.waverec(coeffs, wavelet_fun)
+
+def denoise_multilead(ecg, wavelet_fun='sym3', threshold=0.03, downsample=4):
+    """
+    Apply wavelet denoising to each lead of a multilead ECG.
     
+    ecg: np.array of shape (n_leads, n_samples)
+    """
+    ecg = np.asarray(ecg, dtype=float)
+
+    if downsample and downsample > 1:
+        ecg = ecg[:, ::downsample]  # downsample along samples
+
+    denoised = np.vstack([denoise_signal(lead, wavelet_fun, threshold) 
+                          for lead in ecg])
+    return denoised
+
 
 if __name__ == '__main__':
-    train_model('C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\training_data',
-                'C:\\Users\\yangr\\OneDrive\\Documents\\vscode\\Moody_Challenge\\model',
+    train_model('C:/Users/zoeboysen/Documents/GitHub/Moody_Challenge/training_data',
+                'C:/Users/zoeboysen/OneDrive/Documents/GitHun/Moody_Challenge/model',
                 False)
