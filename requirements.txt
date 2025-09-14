@@ -8,3 +8,4 @@ tensorflow==2.19
 keras==3.9.0
 PyWavelets==1.8.0
 scipy==1.15.2
+random
