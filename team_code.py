@@ -94,7 +94,7 @@ def train_model(data_folder, model_folder, verbose):
     ds = ds.batch(16)                                                               # make this a number divisible by the total number of samples
 
     # get rid of the old variables 
-    del record, features, labels, i_signal, padded_features
+    del features, i_signal, padded_features
     
     # Train the models.
     if verbose:
