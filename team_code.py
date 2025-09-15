@@ -43,7 +43,7 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Extracting features and labels from the data...')
 
-    num_records = 1000
+    #num_records = 1000
     ##Test with small sample
     labels = np.zeros(num_records)
     features = []
