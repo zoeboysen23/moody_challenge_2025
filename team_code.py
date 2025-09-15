@@ -9,16 +9,13 @@
 #
 ################################################################################
 
-import joblib
 import numpy as np
 import os
-import sys
 import tensorflow as tf
 from helper_code import *
 from keras.regularizers import l2
-import keras
 import pywt
-import scipy
+import random
 
 ################################################################################
 #
@@ -28,6 +25,7 @@ import scipy
 
 # Train your models. This function is *required*. You should edit this function to add your code, but do *not* change the arguments
 # of this function. If you do not train one of the models, then you can return None for the model.
+# Find the records in a folder and its subfolders.
 
 # Train your model.
 def train_model(data_folder, model_folder, verbose):
@@ -45,50 +43,86 @@ def train_model(data_folder, model_folder, verbose):
     if verbose:
         print('Extracting features and labels from the data...')
 
+    num_records = 1000
     ##Test with small sample
-    #num_records = 10
-    #features = np.zeros((num_records, 4097,12), dtype=np.float64)
-    labels = np.zeros(num_records, dtype=bool)
-
+    labels = np.zeros(num_records)
     features = []
+
     # Iterate over the records.
-    
     for i in range(num_records):
         if verbose:
             width = len(str(num_records))
             print(f'- {i+1:>{width}}/{num_records}: {records[i]}...')
 
-        record = os.path.join(data_folder, records[i])
-        #features[i] = extract_features(record)
-        features.append(extract_features(record))
-        labels[i] = load_label(record)
+        records[i] = os.path.join(data_folder, records[i])
+        labels[i] = load_label(records[i])
+
+    print(records[1])
+    #get pos labels and then equal amount of neg
+    indices = []
+    indices_neg = []
+    for index, item in enumerate(labels):
+        if item == 1:
+            indices.append(index)
+        elif item == 0:
+            indices_neg.append(index)
+    #print(indices)
+
+    #get corresponding features 
+    new_labels = np.zeros(len(indices)*2)
+    for i in range(len(indices)):
+        #get the values and delte them from the list to then get the rest neg needed 
+        #print(indices[i])
+        new_labels[i]= 1#labels[indices[i]-1]
+        records[indices[i]] = os.path.join(data_folder, records[indices[i]])
+        features.append(extract_features(records[indices[i]]))
+        #labels = np.delete(labels, indices[i]) 
+        #del records[indices[i]]
+        records = np.delete(records,indices[i])
+     
+    #randomize records cause they are now all neg and would match labels no matter what 
+    #np.random.shuffle(records)
+
+    #labels = np.array(labels, dtype=np.float64)
+    #print(new_labels)
+
+    for i in range(len(indices)):
+        #records[i] = os.path.join(data_folder, records[i])
+        #print(i)
+
+        features.append(extract_features(records[i]))
+    labels = new_labels
+    #print(labels)
+    labels = np.array(labels)
+    #features.append(extract_features(records[0:len(indices)]))
+    del records, new_labels
 
     sequence = []
-    for i in range(num_records):
+    for i in range(len(features)):
         #print(features[i].shape)
         sequence.append(features[i].shape[0])
 
     #print(sequence)
-    padded_features = np.zeros((num_records,max(sequence),12),dtype=np.float64)
-    for i in range(num_records):
-        #print(len(features[i]))
-        #padded_features[i] = tf.keras.preprocessing.sequence.pad_sequences(features[i],maxlen=max(sequence))
-        #print(features[i].shape[1])
+    #print(len(labels))
+    padded_features = np.zeros((len(labels),max(sequence),12),dtype=np.float64)
+    for i in range(len(features)):
         for signal_index in range(features[i].shape[1]):
-           #print(features[i][:,signal_index].shape)
             i_signal = features[i][:,signal_index]
             i_signal=i_signal.reshape(1,i_signal.shape[0])
             padded_features[i][:,signal_index] = tf.keras.preprocessing.sequence.pad_sequences(i_signal,maxlen=max(sequence))
-            print(padded_features[i][:,signal_index].shape)
     
     #print(padded_features.shape)
-
-    ds = tf.data.Dataset.from_tensor_slices((padded_features,labels))
-    ds = ds.batch(16)
-    print(ds.element_spec)
+    #print(labels.shape)
     
-    del record, features, labels, i_signal, padded_features
 
+    ds = tf.data.Dataset.from_tensor_slices((padded_features, labels))
+    ds = ds.shuffle(buffer_size=padded_features.shape[1])
+    ds = ds.batch(16)      
+                                                             # make this a number divisible by the total number of samples
+
+    # get rid of the old variables 
+    del features, i_signal
+    
     # Train the models.
     if verbose:
         print('Training the model on the data...')
@@ -103,6 +137,8 @@ def train_model(data_folder, model_folder, verbose):
     concurrent_sig = padded_features.shape[2]
     input_shape = (length, concurrent_sig)
 
+    del padded_features
+
     #clear all data from previous runs 
     tf.keras.backend.clear_session()
 
@@ -115,13 +151,13 @@ def train_model(data_folder, model_folder, verbose):
          tf.keras.layers.Dense(num_labels, activation = "softmax")                                               # softmax for multiclass labeling
      ])
 
-    model.summary() 
-
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
     model.compile(loss = 'sparse_categorical_crossentropy', optimizer='adam', metrics=[tf.keras.metrics.SparseCategoricalAccuracy()]) #loss for numerical and multiple matching
 
     os.makedirs(model_folder, exist_ok=True)
+
+
 
     print("Training")
     model.fit(ds, epochs = epochs)
@@ -154,14 +190,10 @@ def run_model(record, model, verbose):
     #binary_output = model.predict_step(features)
     #print(binary_output)
     probability_output = model.predict(features)
-    #### DOUBLE CHECK THIS TO BE BINARY
     binary_output = (probability_output < 0.5).astype(int)
-    if binary_output[0][0] == 0:
-        binary_output = 0
-    else: 
-        binary_output = 1
-
     #print(binary_output)
+
+    
 
     return binary_output, probability_output
 
@@ -178,29 +210,22 @@ def extract_features(record):
     sex = get_sex(header)
     
     # one_hot_encoding_sex = np.zeros(12, 3, dtype=bool)
-    # if sex == 'Female':
-    #     one_hot_encoding_sex[:,0] = 1
-    # elif sex == 'Male':
-    #     one_hot_encoding_sex[:,1] = 1
-    # else:
-    #     one_hot_encoding_sex[:,2] = 1
-
     if sex == 'Female':
-        sex = 0
+        one_hot_encoding_sex=0
     elif sex == 'Male':
-        sex = 1
+        one_hot_encoding_sex=1
     else:
-        sex = 2
+        one_hot_encoding_sex = 2
 
     signal, fields = load_signals(record)
 
     # TO-DO: Update to compute per-lead features. Check lead order and update and use functions for reordering leads as needed.
-    ecg_denoised = denoise_multilead(signal, wavelet_fun='sym3', threshold=0.03, downsample=4)
+    ecg_denoised = denoise_multilead(signal, wavelet_fun='sym3', threshold=0.03, downsample=2)
     ecg_norm = normalize_multilead_hybrid(ecg_denoised, clip_sigma=5.0, feature_range=(-1,1))
 
     #features = np.concatenate(([age], one_hot_encoding_sex, [signal_mean, signal_std]))
  
-    features = np.concatenate((np.full((1,12), age), np.full((1,12),sex), ecg_norm))
+    features = np.concatenate((np.full((1,12), age),np.full((1,12), one_hot_encoding_sex), ecg_norm))
 
     return features
 
@@ -254,7 +279,6 @@ def normalize_multilead_hybrid(ecg, clip_sigma=5.0, feature_range=(-1, 1)):
     ecg = np.asarray(ecg, dtype=float)
     if ecg.ndim == 1:
         return normalize_signal_hybrid(ecg, clip_sigma, feature_range)
-    
     return np.vstack([
         normalize_signal_hybrid(ecg[i], clip_sigma, feature_range)
         for i in range(ecg.shape[0])
@@ -277,7 +301,7 @@ def denoise_signal(signal, wavelet_fun='sym3', threshold=0.03):
     # Reconstruct signal
     return pywt.waverec(coeffs, wavelet_fun)
 
-def denoise_multilead(ecg, wavelet_fun='sym3', threshold=0.03, downsample=4):
+def denoise_multilead(ecg, wavelet_fun='sym3', threshold=0.03, downsample=2):
     """
     Apply wavelet denoising to each lead of a multilead ECG.
     
@@ -286,7 +310,7 @@ def denoise_multilead(ecg, wavelet_fun='sym3', threshold=0.03, downsample=4):
     ecg = np.asarray(ecg, dtype=float)
 
     if downsample and downsample > 1:
-        ecg = ecg[::downsample, :]  # downsample along samples TODO FLIP THIS
+        ecg = ecg[::downsample,:]  # downsample along samples
 
     denoised = np.vstack([denoise_signal(lead, wavelet_fun, threshold) 
                           for lead in ecg])
